@@ -2,16 +2,22 @@
 
 # <Constants>
 cache_dir="$HOME/.cache/wallblur"
-display_resolution=$(echo -n $(xdpyinfo | grep 'dimensions:') | awk '{print $2;}')
+display_resolution="$(xdpyinfo | awk '/dimensions:/ {printf $2}')"
+blur_delay=0
 # </Constants>
-
 
 # <Functions>
 err() {
 	echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')]: $@" >&2
 }
 
-gen_blurred_seq () {
+# Prevent multiple instances
+if pidof -x "$(basename "$0")" -o $$ >/dev/null; then
+    err 'Another instance of wallblur is already running.'
+    exit 1
+fi
+
+gen_blurred_image () {
 	notify-send "Building wallblur cache for "$base_filename""
 
 	clean_cache
@@ -28,29 +34,20 @@ gen_blurred_seq () {
 		wallpaper="$cache_dir"/"$filename"0."$extension"
 	fi
 
-	for i in $(seq 0 1 5)
-	do
-		blurred_wallaper=""$cache_dir"/"$filename""$i"."$extension""
-		convert -blur 0x$i $wallpaper $blurred_wallaper
-		err " > Generating $(basename $blurred_wallaper)"
-	done
+	blurred_wallaper=""$cache_dir"/"$filename""5"."$extension""
+	convert -blur 0x8 $wallpaper $blurred_wallaper
+	err " > Generating $(basename $blurred_wallaper)"
+
+	notify-send "Finished building cache for "$base_filename""
 }
 
-
 do_blur () {
-	for i in $(seq 5)
-	do
-		blurred_wallaper=""$cache_dir"/"$filename""$i"."$extension""
-		feh --bg-fill "$blurred_wallaper" 
-	done
+	blurred_wallaper=""$cache_dir"/"$filename""5"."$extension""
+	feh --bg-fill "$blurred_wallaper" 
 }
 
 do_unblur () {
-	for i in $(seq 5 -1 0)
-	do
-		blurred_wallaper=""$cache_dir"/"$filename""$i"."$extension""
-		feh --bg-fill "$blurred_wallaper" 
-	done
+	feh --bg-fill "$wallpaper"
 }
 
 check_wallpaper_changed() {
@@ -69,7 +66,7 @@ check_wallpaper_changed() {
 		extension="${base_filename##*.}"
 		filename="${base_filename%.*}"
 
-		gen_blurred_seq
+		gen_blurred_image
 
 		prev_state="reset"
 	fi
@@ -83,22 +80,22 @@ clean_cache() {
 }
 # </Functions>
 
-
 # Get the current wallpaper location from pywal cache
 wallpaper="$(grep wallpaper ~/.cache/wal/colors.sh | awk -F "=" '{print $2}')"
 temp_pre=${wallpaper%\'} 
 wallpaper="${temp_pre#\'}" 
-err "Curr wallpaper $wallpaper"
+err "Current wallpaper: $wallpaper"
 
 base_filename=${wallpaper##*/}
 extension="${base_filename##*.}"
 filename="${base_filename%.*}"
 
-err $base_filename
-err $extension
-err $filename
 
-err $cache_dir
+err "Blur delay       : $blur_delay"
+err "Filename         : $base_filename"
+err "Extension        : $extension"
+#err $filename
+err "Cache directory  : $cache_dir"
 
 # Create a cache directory if it doesn't exist
 if [ ! -d "$cache_dir" ]; then
@@ -111,7 +108,7 @@ blur_cache=""$cache_dir"/"$filename"0."$extension""
 # Generate cached images if no cached images are found
 if [ ! -f "$blur_cache" ]
 then
-	gen_blurred_seq
+	gen_blurred_image
 fi
 
 prev_state="reset"
@@ -141,5 +138,5 @@ while :; do
 		    	prev_state="unblurred"
 		fi
 	fi
-	sleep 0.3
+	sleep "$blur_delay"
 done
